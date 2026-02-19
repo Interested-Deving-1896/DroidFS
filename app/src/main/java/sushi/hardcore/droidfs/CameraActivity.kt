@@ -18,6 +18,7 @@ import android.widget.ImageView
 import android.widget.RelativeLayout
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.appcompat.widget.SwitchCompat
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -41,6 +42,7 @@ import androidx.camera.video.VideoRecordEvent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import sushi.hardcore.droidfs.databinding.ActivityCameraBinding
@@ -82,6 +84,8 @@ class CameraActivity : BaseActivity(), SensorOrientationListener.Listener {
                 binding.imageTimer.setImageResource(R.drawable.icon_timer_off)
             }
         }
+    private var repeat = false
+    private var timerJob: Job? = null
     private lateinit var sensorOrientationListener: SensorOrientationListener
     private var currentRotation = 0
     private var previousOrientation: Float = 0f
@@ -110,7 +114,6 @@ class CameraActivity : BaseActivity(), SensorOrientationListener.Listener {
     private var isBackCamera = true
     private var isInVideoMode = false
     private var isRecording = false
-    private var isWaitingForTimer = false
     private lateinit var binding: ActivityCameraBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -220,16 +223,22 @@ class CameraActivity : BaseActivity(), SensorOrientationListener.Listener {
             }
         }
         binding.imageTimer.setOnClickListener {
-            with (EditTextDialog(this, R.string.enter_timer_duration) {
+            val dialog = EditTextDialog(this, R.string.enter_timer_duration, R.layout.dialog_camera_timer)
+            dialog.dialogEditText.inputType = InputType.TYPE_CLASS_NUMBER
+            if (timerDuration != 0) {
+                dialog.setSelectedText(timerDuration.toString())
+            }
+            val switch = dialog.root.findViewById<SwitchCompat>(R.id.switch_repeat)
+            switch.isChecked = repeat
+            dialog.onSubmit { it ->
                 try {
                     timerDuration = it.toInt()
-                } catch (e: NumberFormatException) {
+                    repeat = switch.isChecked
+                } catch (_: NumberFormatException) {
                     Toast.makeText(this, R.string.invalid_number, Toast.LENGTH_SHORT).show()
                 }
-            }) {
-                binding.dialogEditText.inputType = InputType.TYPE_CLASS_NUMBER
-                show()
             }
+            dialog.show()
         }
         binding.imageFlash.setOnClickListener {
             binding.imageFlash.setImageResource(if (isInVideoMode) {
@@ -458,8 +467,7 @@ class CameraActivity : BaseActivity(), SensorOrientationListener.Listener {
     private fun startTimerThen(action: () -> Unit) {
         if (timerDuration > 0){
             binding.textTimer.visibility = View.VISIBLE
-            isWaitingForTimer = true
-            lifecycleScope.launch {
+            timerJob = lifecycleScope.launch {
                 for (i in timerDuration downTo 1){
                     binding.textTimer.text = i.toString()
                     delay(1000)
@@ -468,40 +476,52 @@ class CameraActivity : BaseActivity(), SensorOrientationListener.Listener {
                     action()
                     binding.textTimer.visibility = View.GONE
                 }
-                isWaitingForTimer = false
             }
         } else {
             action()
         }
     }
 
-    private fun onClickTakePhoto() {
-        if (!isWaitingForTimer) {
+    private fun takePhoto() {
+        imageCapture?.let { imageCapture ->
             val outputPath = getOutputPath(false)
-            startTimerThen {
-                imageCapture?.let { imageCapture ->
-                    val outputBuff = ByteArrayOutputStream()
-                    val outputOptions = ImageCapture.OutputFileOptions.Builder(outputBuff).build()
-                    imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
-                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                            binding.takePhotoButton.onPhotoTaken()
-                            if (encryptedVolume.importFile(ByteArrayInputStream(outputBuff.toByteArray()), outputPath)) {
-                                Toast.makeText(applicationContext, getString(R.string.picture_save_success, outputPath), Toast.LENGTH_SHORT).show()
+            val outputBuff = ByteArrayOutputStream()
+            val outputOptions = ImageCapture.OutputFileOptions.Builder(outputBuff).build()
+            imageCapture.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                        if (encryptedVolume.importFile(ByteArrayInputStream(outputBuff.toByteArray()), outputPath)) {
+                            Toast.makeText(applicationContext, getString(R.string.picture_save_success, outputPath), Toast.LENGTH_SHORT).show()
+                            if (repeat) {
+                                startTimerThen(::takePhoto)
                             } else {
-                                CustomAlertDialogBuilder(this@CameraActivity, theme)
-                                    .setTitle(R.string.error)
-                                    .setMessage(R.string.picture_save_failed)
-                                    .setPositiveButton(R.string.ok, null)
-                                    .show()
+                                binding.takePhotoButton.onPhotoTaken()
                             }
-                        }
-                        override fun onError(exception: ImageCaptureException) {
+                        } else {
+                            CustomAlertDialogBuilder(this@CameraActivity, theme)
+                                .setTitle(R.string.error)
+                                .setMessage(R.string.picture_save_failed)
+                                .setPositiveButton(R.string.ok, null)
+                                .show()
                             binding.takePhotoButton.onPhotoTaken()
-                            Toast.makeText(applicationContext, exception.message, Toast.LENGTH_SHORT).show()
                         }
-                    })
-                }
-            }
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        binding.takePhotoButton.onPhotoTaken()
+                        Toast.makeText(applicationContext, exception.message, Toast.LENGTH_SHORT).show()
+                    }
+                })
+        }
+    }
+
+    private fun onClickTakePhoto() {
+        val job = timerJob
+        if (job != null && job.isActive) {
+            job.cancel()
+            binding.textTimer.visibility = View.GONE
+            binding.takePhotoButton.onPhotoTaken()
+        } else {
+            startTimerThen(::takePhoto)
         }
     }
 
@@ -509,7 +529,7 @@ class CameraActivity : BaseActivity(), SensorOrientationListener.Listener {
     private fun onClickRecordVideo() {
         if (isRecording) {
             videoRecording?.stop()
-        } else if (!isWaitingForTimer) {
+        } else if (!(timerJob?.isActive ?: false)) {
             val path = getOutputPath(true)
             val fileHandle = encryptedVolume.openFileWriteMode(path)
             if (fileHandle == -1L) {

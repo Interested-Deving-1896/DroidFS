@@ -261,24 +261,25 @@ open class BaseExplorerActivity : BaseActivity(), ExplorerElementAdapter.Listene
     }
 
     protected fun createNewFile(callback: (Long) -> Unit) {
-        EditTextDialog(this, R.string.enter_file_name) {
-            if (it.isEmpty()) {
-                Toast.makeText(this, R.string.error_filename_empty, Toast.LENGTH_SHORT).show()
-                createNewFile(callback)
-            } else {
-                val filePath = PathUtils.pathJoin(currentDirectoryPath, it)
-                val handleID = encryptedVolume.openFileWriteMode(filePath)
-                if (handleID == -1L) {
-                    CustomAlertDialogBuilder(this, theme)
-                        .setTitle(R.string.error)
-                        .setMessage(R.string.file_creation_failed)
-                        .setPositiveButton(R.string.ok, null)
-                        .show()
+        EditTextDialog(this, R.string.enter_file_name)
+            .onSubmit {
+                if (it.isEmpty()) {
+                    Toast.makeText(this, R.string.error_filename_empty, Toast.LENGTH_SHORT).show()
+                    createNewFile(callback)
                 } else {
-                    callback(handleID)
+                    val filePath = PathUtils.pathJoin(currentDirectoryPath, it)
+                    val handleID = encryptedVolume.openFileWriteMode(filePath)
+                    if (handleID == -1L) {
+                        CustomAlertDialogBuilder(this, theme)
+                            .setTitle(R.string.error)
+                            .setMessage(R.string.file_creation_failed)
+                            .setPositiveButton(R.string.ok, null)
+                            .show()
+                    } else {
+                        callback(handleID)
+                    }
                 }
-            }
-        }.show()
+            }.show()
     }
 
     private fun setVolumeNameTitle() {
@@ -436,9 +437,9 @@ open class BaseExplorerActivity : BaseActivity(), ExplorerElementAdapter.Listene
     }
 
     protected fun openDialogCreateFolder() {
-        EditTextDialog(this, R.string.enter_folder_name) {
-            createFolder(it)
-        }.show()
+        EditTextDialog(this, R.string.enter_folder_name)
+            .onSubmit(::createFolder)
+            .show()
     }
 
     protected fun checkPathOverwrite(items: List<OperationFile>, dstDirectoryPath: String, callback: (List<OperationFile>?) -> Unit) {
@@ -475,23 +476,22 @@ open class BaseExplorerActivity : BaseActivity(), ExplorerElementAdapter.Listene
                         checkPathOverwrite(items, dstDirectoryPath, callback)
                     }
                     .setNegativeButton(R.string.no) { _, _ ->
-                        with(EditTextDialog(this, R.string.enter_new_name) {
-                            items[i].dstPath = PathUtils.pathJoin(dstDirectoryPath, PathUtils.getRelativePath(srcDirectoryPath, items[i].parentPath), it)
-                            if (items[i].isDirectory) {
-                                for (j in items.indices) {
-                                    if (PathUtils.isChildOf(items[j].srcPath, items[i].srcPath)) {
-                                        items[j].dstPath = PathUtils.pathJoin(items[i].dstPath!!, PathUtils.getRelativePath(items[i].srcPath, items[j].srcPath))
+                        EditTextDialog(this, R.string.enter_new_name)
+                            .setSelectedText(items[i].name)
+                            .onSubmit {
+                                items[i].dstPath = PathUtils.pathJoin(dstDirectoryPath, PathUtils.getRelativePath(srcDirectoryPath, items[i].parentPath), it)
+                                if (items[i].isDirectory) {
+                                    for (j in items.indices) {
+                                        if (PathUtils.isChildOf(items[j].srcPath, items[i].srcPath)) {
+                                            items[j].dstPath = PathUtils.pathJoin(items[i].dstPath!!, PathUtils.getRelativePath(items[i].srcPath, items[j].srcPath))
+                                        }
                                     }
                                 }
+                                checkPathOverwrite(items, dstDirectoryPath, callback)
                             }
-                            checkPathOverwrite(items, dstDirectoryPath, callback)
-                        }) {
-                            setSelectedText(items[i].name)
-                            setOnCancelListener{
+                            .setOnCancelListener {
                                 callback(null)
-                            }
-                            show()
-                        }
+                            }.show()
                     }
                     .setOnCancelListener{
                         callback(null)
@@ -633,12 +633,11 @@ open class BaseExplorerActivity : BaseActivity(), ExplorerElementAdapter.Listene
             }
             R.id.rename -> {
                 val oldName = explorerElements[explorerAdapter.selectedItems.first()].name
-                with(EditTextDialog(this, R.string.rename_title) {
-                    rename(oldName, it)
-                }) {
-                    setSelectedText(oldName)
-                    show()
-                }
+                EditTextDialog(this, R.string.rename_title)
+                    .setSelectedText(oldName)
+                    .onSubmit {
+                        rename(oldName, it)
+                    }.show()
                 true
             }
             R.id.open_as -> {

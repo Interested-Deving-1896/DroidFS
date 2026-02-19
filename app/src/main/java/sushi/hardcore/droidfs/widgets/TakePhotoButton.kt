@@ -13,10 +13,10 @@ class TakePhotoButton: AppCompatImageView {
 
     private fun init() {
         setOnTouchListener{ view, event ->
-            view.performClick()
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> onClick()
-                MotionEvent.ACTION_UP -> isPressed = true
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                view.performClick()
+                isPressed = true
+                onClick()
             }
             true
         }

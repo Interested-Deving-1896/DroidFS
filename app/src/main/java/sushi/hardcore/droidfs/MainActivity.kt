@@ -450,41 +450,42 @@ class MainActivity : BaseActivity(), VolumeAdapter.Listener {
     }
 
     private fun renameVolume(volume: VolumeData, position: Int) {
-        with (EditTextDialog(this, R.string.new_volume_name) { newName ->
-            val srcPath = File(volume.getFullPath(filesDir.path))
-            val dstPath = File(srcPath.parent, newName).canonicalFile
-            val newDBName: String
-            val success = if (volume.isHidden) {
-                if (newName.contains(PathUtils.SEPARATOR)) {
-                    Toast.makeText(this, R.string.error_slash_in_name, Toast.LENGTH_SHORT).show()
-                    renameVolume(volume, position)
-                    return@EditTextDialog
-                }
-                newDBName = newName
-                srcPath.renameTo(dstPath)
-            } else {
-                newDBName = dstPath.path
-                DocumentFile.fromFile(srcPath).renameTo(newName)
-            }
-            if (success) {
-                volumeDatabase.renameVolume(volume, newDBName)
-                VolumeProvider.notifyRootsChanged(this)
-                volumeAdapter.onVolumeDataChanged(position)
-                unselect(position)
-                if (volume.name == volumeOpener.defaultVolumeName) {
-                    with (sharedPrefs.edit()) {
-                        putString(DEFAULT_VOLUME_KEY, newDBName)
-                        apply()
+        EditTextDialog(this, R.string.new_volume_name)
+            .setSelectedText(volume.shortName)
+            .onSubmit { newName: String ->
+                val srcPath = File(volume.getFullPath(filesDir.path))
+                val dstPath = File(srcPath.parent, newName).canonicalFile
+                val newDBName: String
+                val success = if (volume.isHidden) {
+                    if (newName.contains(PathUtils.SEPARATOR)) {
+                        Toast.makeText(this, R.string.error_slash_in_name, Toast.LENGTH_SHORT)
+                            .show()
+                        renameVolume(volume, position)
+                        return@onSubmit
                     }
-                    volumeOpener.defaultVolumeName = newDBName
+                    newDBName = newName
+                    srcPath.renameTo(dstPath)
+                } else {
+                    newDBName = dstPath.path
+                    DocumentFile.fromFile(srcPath).renameTo(newName)
                 }
-            } else {
-                Toast.makeText(this, R.string.volume_rename_failed, Toast.LENGTH_SHORT).show()
+                if (success) {
+                    volumeDatabase.renameVolume(volume, newDBName)
+                    VolumeProvider.notifyRootsChanged(this)
+                    volumeAdapter.onVolumeDataChanged(position)
+                    unselect(position)
+                    if (volume.name == volumeOpener.defaultVolumeName) {
+                        with(sharedPrefs.edit()) {
+                            putString(DEFAULT_VOLUME_KEY, newDBName)
+                            apply()
+                        }
+                        volumeOpener.defaultVolumeName = newDBName
+                    }
+                } else {
+                    Toast.makeText(this, R.string.volume_rename_failed, Toast.LENGTH_SHORT).show()
+                }
             }
-        }) {
-            setSelectedText(volume.shortName)
-            show()
-        }
+            .show()
     }
 
     private fun openVolume(volume: VolumeData) {

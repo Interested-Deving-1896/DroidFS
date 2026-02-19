@@ -437,15 +437,12 @@ class ExplorerActivity : BaseExplorerActivity() {
                     .setPositiveButton(R.string.yes) {_, _ ->
                         item.overwriteConfirmed = true
                         checkMoveOverwrite(items, callback)
-                    }
-                    .setNegativeButton(R.string.no) { _, _ ->
-                        with(EditTextDialog(this, R.string.enter_new_name) {
-                            item.dstPath = PathUtils.pathJoin(PathUtils.getParentPath(item.dstPath!!), it)
-                            checkMoveOverwrite(items, callback)
-                        }) {
-                            setSelectedText(item.name)
-                            show()
-                        }
+                    }.setNegativeButton(R.string.no) { _, _ ->
+                        EditTextDialog(this, R.string.enter_new_name).setSelectedText(item.name)
+                            .onSubmit {
+                                item.dstPath = PathUtils.pathJoin(PathUtils.getParentPath(item.dstPath!!), it)
+                                checkMoveOverwrite(items, callback)
+                            }.show()
                     }
                     .show()
                 return
